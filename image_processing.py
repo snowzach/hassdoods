@@ -333,7 +333,8 @@ class Doods(ImageProcessingEntity):
             for instance in values:
                 box_label = "{0} {1:.1f}%".format(label, instance["score"])
                 # Already scaled, use 1 for width and height
-                draw_box(draw, instance["box"], 1, 1, box_label, (255, 255, 0))
+                draw_box(draw, instance["box"], img_width,
+                         img_height, box_label, (255, 255, 0))
 
         for path in paths:
             _LOGGER.info("Saving results image to %s", path)
@@ -368,7 +369,7 @@ class Doods(ImageProcessingEntity):
             else:
                 for d in response["detections"]:
                     score = d["confidence"]
-                    boxes = [d["y1"], d["x1"], d["y2"], d["x2"]]
+                    boxes = [d["top"], d["left"], d["bottom"], d["right"]]
                     label = d["label"]
 
                     # Exclude unlisted labels
