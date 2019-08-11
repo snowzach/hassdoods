@@ -20,12 +20,13 @@ image_processing:
       - entity_id: camera.front_yard
     confidence: 50
     labels:
-      - label: person
-          area:
-            # Exclude top 10% of image
-            top: 0.1
-            # Exclude right 15% of image
-            right: 0.85
+      - name: person
+        confidence: 40
+        area:
+          # Exclude top 10% of image
+          top: 0.1
+          # Exclude right 15% of image
+          right: 0.85
       - car
       - truck
 ```
