@@ -1,5 +1,5 @@
 # DOODS
-Dedicated Outside Object Detection Service - Yes, it's a backronym, so what...
+Dedicated Open Object Detection Service - Yes, it's a backronym, so what...
 
 DOODS is a GRPC service that detects objects in images. It's designed to be run as a container, optionally remotely. 
 
