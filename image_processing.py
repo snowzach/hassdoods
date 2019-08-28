@@ -1,9 +1,5 @@
 """Support for the DOODS service."""
 import logging
-import os
-import sys
-import requests
-import base64
 import time
 import voluptuous as vol
 from pydoods import PyDOODS
@@ -15,11 +11,6 @@ from homeassistant.components.image_processing import (
     CONF_SOURCE,
     PLATFORM_SCHEMA,
     ImageProcessingEntity,
-)
-from homeassistant.const import (
-    HTTP_BAD_REQUEST,
-    HTTP_OK,
-    HTTP_UNAUTHORIZED,
 )
 from homeassistant.core import split_entity_id
 from homeassistant.helpers import template
@@ -105,14 +96,15 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
         return
 
     detector = {}
-    for d in response["detectors"]:
-        if d["name"] == detector_name:
-            detector = d
+    for server_detector in response["detectors"]:
+        if server_detector["name"] == detector_name:
+            detector = server_detector
             break
 
     if not detector:
         _LOGGER.warning(
-            "Detector %s is not supported by doods server %s", detector_name, url)
+            "Detector %s is not supported by doods server %s", detector_name, url
+        )
         return
 
     entities = []
@@ -133,15 +125,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 class Doods(ImageProcessingEntity):
     """Doods image processing service client."""
 
-    def __init__(
-        self,
-        hass,
-        camera_entity,
-        name,
-        doods,
-        detector,
-        config,
-    ):
+    def __init__(self, hass, camera_entity, name, doods, detector, config):
         """Initialize the DOODS entity."""
         self.hass = hass
         self._camera_entity = camera_entity
@@ -171,8 +155,7 @@ class Doods(ImageProcessingEntity):
             if isinstance(label, dict):
                 label_name = label.get(CONF_NAME)
                 if label_name not in detector["labels"] and label_name != "*":
-                    _LOGGER.warning(
-                        "Detector does not support label %s", label_name)
+                    _LOGGER.warning("Detector does not support label %s", label_name)
                     continue
 
                 # Label Confidence
@@ -194,8 +177,7 @@ class Doods(ImageProcessingEntity):
                     ]
             else:
                 if label not in detector["labels"] and label != "*":
-                    _LOGGER.warning(
-                        "Detector does not support label %s", label)
+                    _LOGGER.warning("Detector does not support label %s", label)
                     continue
                 self._label_areas[label] = [0, 0, 1, 1]
                 if label not in dconfig or dconfig[label] > confidence:
@@ -259,19 +241,13 @@ class Doods(ImageProcessingEntity):
         # Draw custom global region/area
         if self._area != [0, 0, 1, 1]:
             draw_box(
-                draw, self._area, img_width, img_height, "Detection Area", (
-                    0, 255, 255)
+                draw, self._area, img_width, img_height, "Detection Area", (0, 255, 255)
             )
 
         for label, values in matches.items():
 
             # Draw custom label regions/areas
-            if label in self._label_areas and self._label_areas[label] != [
-                0,
-                0,
-                1,
-                1,
-            ]:
+            if label in self._label_areas and self._label_areas[label] != [0, 0, 1, 1]:
                 box_label = "{} Detection Area".format(label.capitalize())
                 draw_box(
                     draw,
@@ -286,8 +262,14 @@ class Doods(ImageProcessingEntity):
             for instance in values:
                 box_label = "{0} {1:.1f}%".format(label, instance["score"])
                 # Already scaled, use 1 for width and height
-                draw_box(draw, instance["box"], img_width,
-                         img_height, box_label, (255, 255, 0))
+                draw_box(
+                    draw,
+                    instance["box"],
+                    img_width,
+                    img_height,
+                    box_label,
+                    (255, 255, 0),
+                )
 
         for path in paths:
             _LOGGER.info("Saving results image to %s", path)
@@ -298,73 +280,87 @@ class Doods(ImageProcessingEntity):
 
         from PIL import Image
         import io
+
         img = Image.open(io.BytesIO(bytearray(image)))
         img_width, img_height = img.size
 
-        if self._aspect and abs((img_width/img_height) - self._aspect) > 0.1:
-            _LOGGER.warn("The image aspect: %s and the detector aspect: %s differ by more than 0.1",
-                         (img_width/img_height), self._aspect)
+        if self._aspect and abs((img_width / img_height) - self._aspect) > 0.1:
+            _LOGGER.warning(
+                "The image aspect: %s and the detector aspect: %s differ by more than 0.1",
+                (img_width / img_height),
+                self._aspect,
+            )
 
         # Run detection
         start = time.time()
-        dconfig = {}
         response = self._doods.detect(image, self._dconfig)
-        _LOGGER.info("doods detect: %s response: %s duration: %s",
-                     self._dconfig, response, time.time()-start)
+        _LOGGER.info(
+            "doods detect: %s response: %s duration: %s",
+            self._dconfig,
+            response,
+            time.time() - start,
+        )
+
+        if not response:
+            self._matches = {}
+            self._total_matches = 0
+            return
 
         matches = {}
         total_matches = 0
 
-        if response:
-            # Was there an error
-            if "error" in response:
-                _LOGGER.error(response["error"])
-            else:
-                for d in response["detections"]:
-                    score = d["confidence"]
-                    boxes = [d["top"], d["left"], d["bottom"], d["right"]]
-                    label = d["label"]
+        # Was there an error
+        if "error" in response:
+            _LOGGER.error(response["error"])
+        else:
+            for detection in response["detections"]:
+                score = detection["confidence"]
+                boxes = [
+                    detection["top"],
+                    detection["left"],
+                    detection["bottom"],
+                    detection["right"],
+                ]
+                label = detection["label"]
 
-                    # Exclude unlisted labels
-                    if "*" not in self._dconfig and label not in self._dconfig:
-                        continue
+                # Exclude unlisted labels
+                if "*" not in self._dconfig and label not in self._dconfig:
+                    continue
 
-                    # Exclude matches outside global area definition
-                    if (
-                        boxes[0] < self._area[0] * img_height
-                        or boxes[1] < self._area[1] * img_width
-                        or boxes[2] > self._area[2] * img_height
-                        or boxes[3] > self._area[3] * img_width
-                    ):
-                        continue
+                # Exclude matches outside global area definition
+                if (
+                    boxes[0] < self._area[0] * img_height
+                    or boxes[1] < self._area[1] * img_width
+                    or boxes[2] > self._area[2] * img_height
+                    or boxes[3] > self._area[3] * img_width
+                ):
+                    continue
 
-                    # Exclude matches outside label specific area definition
-                    if self._label_areas and (
-                        boxes[0] < self._label_areas[label][0] * img_height
-                        or boxes[1] < self._label_areas[label][1] * img_width
-                        or boxes[2] > self._label_areas[label][2] * img_height
-                        or boxes[3] > self._label_areas[label][3] * img_width
-                    ):
-                        continue
+                # Exclude matches outside label specific area definition
+                if self._label_areas and (
+                    boxes[0] < self._label_areas[label][0] * img_height
+                    or boxes[1] < self._label_areas[label][1] * img_width
+                    or boxes[2] > self._label_areas[label][2] * img_height
+                    or boxes[3] > self._label_areas[label][3] * img_width
+                ):
+                    continue
 
-                    if label not in matches.keys():
-                        matches[label] = []
-                    matches[label].append(
-                        {"score": float(score), "box": boxes})
-                    total_matches += 1
+                if label not in matches.keys():
+                    matches[label] = []
+                matches[label].append({"score": float(score), "box": boxes})
+                total_matches += 1
 
-                    # Save Images
-                    if total_matches and self._file_out:
-                        paths = []
-                        for path_template in self._file_out:
-                            if isinstance(path_template, template.Template):
-                                paths.append(
-                                    path_template.render(
-                                        camera_entity=self._camera_entity)
-                                )
-                            else:
-                                paths.append(path_template)
-                        self._save_image(image, matches, paths)
+                # Save Images
+                if total_matches and self._file_out:
+                    paths = []
+                    for path_template in self._file_out:
+                        if isinstance(path_template, template.Template):
+                            paths.append(
+                                path_template.render(camera_entity=self._camera_entity)
+                            )
+                        else:
+                            paths.append(path_template)
+                    self._save_image(image, matches, paths)
 
         self._matches = matches
         self._total_matches = total_matches
