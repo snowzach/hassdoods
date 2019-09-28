@@ -7,6 +7,7 @@ import voluptuous as vol
 from PIL import Image, ImageDraw
 from pydoods import PyDOODS
 
+from homeassistant.const import CONF_TIMEOUT
 from homeassistant.components.image_processing import (
     CONF_CONFIDENCE,
     CONF_ENTITY_ID,
@@ -59,6 +60,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Required(CONF_URL): cv.string,
         vol.Required(CONF_DETECTOR): cv.string,
+        vol.Required(CONF_TIMEOUT, default=90): cv.positive_int,
         vol.Optional(CONF_AUTH_KEY, default=""): cv.string,
         vol.Optional(CONF_FILE_OUT, default=[]): vol.All(cv.ensure_list, [cv.template]),
         vol.Optional(CONF_CONFIDENCE, default=0.0): vol.Range(min=0, max=100),
@@ -93,8 +95,9 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     url = config[CONF_URL]
     auth_key = config[CONF_AUTH_KEY]
     detector_name = config[CONF_DETECTOR]
+    timeout = config[CONF_TIMEOUT]
 
-    doods = PyDOODS(url, auth_key)
+    doods = PyDOODS(url, auth_key, timeout)
     response = doods.get_detectors()
     if not isinstance(response, dict):
         _LOGGER.warning("Could not connect to doods server: %s", url)
